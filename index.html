@@ -42,6 +42,12 @@
   .admin-banner b{display:block; margin-bottom:6px; color:var(--red);}
   .admin-banner .dl-btn{ margin-top:8px; display:inline-block; background:var(--green); color:var(--gold-soft); border:0; border-radius:8px; padding:9px 16px; font:600 0.82rem 'Public Sans',sans-serif; cursor:pointer; }
 
+  .toolbar{ max-width:640px; margin:0 auto; padding:14px 20px 0; display:flex; gap:8px; flex-wrap:wrap; }
+  .toolbar input[type="search"]{ flex:1 1 160px; padding:9px 12px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink); font:400 0.9rem 'Public Sans',sans-serif; }
+  .toolbar select{ flex:0 0 auto; padding:9px 10px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink); font:500 0.85rem 'Public Sans',sans-serif; }
+  .cat-heading{ grid-column:1/-1; font:600 1.05rem 'Fraunces',serif; color:var(--red); margin:14px 0 -4px; padding-top:10px; border-top:1px dashed var(--line); }
+  .cat-heading:first-child{ border-top:0; margin-top:0; padding-top:0; }
+
   .chips{display:flex; gap:8px; padding:16px 20px; overflow-x:auto; max-width:640px; margin:0 auto; scrollbar-width:none;}
   .chips::-webkit-scrollbar{display:none;}
   .chip{flex:none; padding:8px 14px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--ink); font:500 0.88rem 'Public Sans',sans-serif; cursor:pointer;}
@@ -108,6 +114,8 @@
     STATE = {shopName:'Kios Pak Wan', tagline:'Cek dulu ada apa aja hari ini', categories:['Rokok','Makanan & Minuman','Kebutuhan Pokok','Lainnya'], products:[], qris:null};
   }
   var activeCat = 'Semua';
+  var searchQuery = '';
+  var sortMode = 'kategori';
   var adminMode = new URLSearchParams(location.search).get('admin') === '1';
   var dirty = false; // true kalau ada perubahan yang belum diunduh
 
@@ -178,11 +186,52 @@
     '</article>';
   }
 
+  function buildProductList(owner){
+    var base = STATE.products.slice();
+    if(activeCat !== 'Semua'){ base = base.filter(function(p){ return p.category === activeCat; }); }
+    var q = searchQuery.trim().toLowerCase();
+    if(q){
+      base = base.filter(function(p){
+        return (p.name||'').toLowerCase().indexOf(q) !== -1 || (p.description||'').toLowerCase().indexOf(q) !== -1;
+      });
+    }
+
+    var html = '';
+    var any = false;
+
+    if(sortMode === 'kategori'){
+      var cats = activeCat === 'Semua' ? STATE.categories : [activeCat];
+      cats.forEach(function(cat){
+        var items = base.filter(function(p){ return p.category === cat; });
+        if(!items.length) return;
+        any = true;
+        items = items.slice().sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'id'); });
+        html += '<div class="cat-heading">'+escapeHtml(cat)+'</div>';
+        items.forEach(function(p){ html += productCard(p, owner); });
+      });
+    } else {
+      var items = base.slice();
+      if(sortMode === 'az') items.sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'id'); });
+      else if(sortMode === 'za') items.sort(function(a,b){ return (b.name||'').localeCompare(a.name||'', 'id'); });
+      else if(sortMode === 'murah') items.sort(function(a,b){ return (a.price||0) - (b.price||0); });
+      else if(sortMode === 'mahal') items.sort(function(a,b){ return (b.price||0) - (a.price||0); });
+      if(items.length){ any = true; items.forEach(function(p){ html += productCard(p, owner); }); }
+    }
+
+    if(!any){
+      html = '<div class="empty">' + (q ?
+        'Tidak ada barang yang cocok dengan pencarian "'+escapeHtml(searchQuery)+'".' :
+        (owner ?
+          'Belum ada barang di kategori ini. Tambahkan lewat tombol "+ Barang" di kanan bawah.' :
+          'Barang di kategori ini belum ditambahkan oleh pemilik toko.')) + '</div>';
+    }
+    return html;
+  }
+
   function render(){
     var app = document.getElementById('app');
     var owner = adminMode;
     var cats = ['Semua'].concat(STATE.categories);
-    var filtered = activeCat === 'Semua' ? STATE.products : STATE.products.filter(function(p){ return p.category === activeCat; });
 
     var html = '';
     html += '<header class="hero"><div class="hero-inner">' +
@@ -204,15 +253,18 @@
     });
     html += '</nav>';
 
-    html += '<main class="grid">';
-    if(filtered.length){
-      filtered.forEach(function(p){ html += productCard(p, owner); });
-    } else {
-      html += '<div class="empty">' + (owner ?
-        'Belum ada barang di kategori ini. Tambahkan lewat tombol "+ Barang" di kanan bawah.' :
-        'Barang di kategori ini belum ditambahkan oleh pemilik toko.') + '</div>';
-    }
-    html += '</main>';
+    html += '<div class="toolbar">' +
+      '<input type="search" id="search-input" placeholder="Cari barang..." value="'+escapeHtml(searchQuery)+'">' +
+      '<select id="sort-select">' +
+        '<option value="kategori"'+(sortMode==='kategori'?' selected':'')+'>Berdasarkan Kategori</option>' +
+        '<option value="az"'+(sortMode==='az'?' selected':'')+'>Nama A-Z</option>' +
+        '<option value="za"'+(sortMode==='za'?' selected':'')+'>Nama Z-A</option>' +
+        '<option value="murah"'+(sortMode==='murah'?' selected':'')+'>Harga Termurah</option>' +
+        '<option value="mahal"'+(sortMode==='mahal'?' selected':'')+'>Harga Termahal</option>' +
+      '</select>' +
+    '</div>';
+
+    html += '<main class="grid">' + buildProductList(owner) + '</main>';
 
     html += '<div class="fabs">';
     if(STATE.qris){ html += '<button class="fab fab-qris" id="btn-qris">Lihat QRIS</button>'; }
@@ -236,6 +288,20 @@
     if(qrisBtn) qrisBtn.onclick = function(){ openQrisModal(owner); };
     var dlBtn = document.getElementById('btn-download');
     if(dlBtn) dlBtn.onclick = downloadUpdatedSite;
+    var searchInput = document.getElementById('search-input');
+    if(searchInput){
+      searchInput.addEventListener('input', function(){
+        searchQuery = searchInput.value;
+        var pos = searchInput.selectionStart;
+        render();
+        var el = document.getElementById('search-input');
+        if(el){ el.focus(); try{ el.setSelectionRange(pos, pos); }catch(e){} }
+      });
+    }
+    var sortSelect = document.getElementById('sort-select');
+    if(sortSelect){
+      sortSelect.onchange = function(){ sortMode = sortSelect.value; render(); };
+    }
     document.querySelectorAll('[data-action="edit"]').forEach(function(b){
       b.onclick = function(){
         var prod = STATE.products.find(function(x){ return x.id === b.dataset.id; });
